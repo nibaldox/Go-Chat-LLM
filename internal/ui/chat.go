@@ -37,7 +37,13 @@ type ChatModel struct {
     tools []mcp.Tool
     selecting bool
     modelList list.Model
+    showHelp bool
+    lastDuration time.Duration
+    loadingFrame int
+    isStreamingAI bool
+    
 }
+
 
 func NewChatModel(ctx context.Context) ChatModel {
     client := api.New("http://localhost:11434")
@@ -80,9 +86,11 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     case tea.WindowSizeMsg:
         m.width, m.height = msg.Width, msg.Height
         m.viewport.Width = m.width - 2
-        m.viewport.Height = m.height - 6 // header+status+input
+        m.viewport.Height = m.height - 4 // status+input (no header)
         m.input.Width = m.width - 2
-        m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.history, "\n")))
+        
+        // Reflow existing messages to new width
+        m.viewport.SetContent(strings.Join(m.history, "\n"))
         return m, nil
     case tea.KeyMsg:
         if m.selecting {
@@ -102,6 +110,9 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         switch msg.String() {
         case "ctrl+c", "esc":
             return m, tea.Quit
+        case "ctrl+h", "f1":
+            m.showHelp = !m.showHelp
+            return m, nil
         case "ctrl+m":
             m.selecting = true
             return m, nil
@@ -113,14 +124,31 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         case "enter":
             prompt := m.input.Value()
             m.input.Reset()
-            userMsg := userStyle.Render("💬 You: "+prompt)
+            
+            // Responsive user message - max 80% of viewport width
+            maxWidth := int(float64(m.viewport.Width) * 0.8)
+            if maxWidth < 20 {
+                maxWidth = 20
+            }
+            
+            userMsg := userStyle.Width(maxWidth).Render("💬 You: "+prompt)
             aligned := lipgloss.NewStyle().Width(m.viewport.Width).Align(lipgloss.Right).Render(userMsg)
             m.history = append(m.history, aligned)
-            m.history = append(m.history, separatorStyle.Render(""))
+            
+            // Responsive separator
+            sepWidth := m.viewport.Width / 3 // Make separator 1/3 of viewport width
+            if sepWidth < 3 {
+                sepWidth = 3
+            }
+            separator := strings.Repeat("─", sepWidth)
+            centeredSep := lipgloss.NewStyle().Width(m.viewport.Width).Align(lipgloss.Center).Render(separator)
+            m.history = append(m.history, messageSeparatorStyle.Render(centeredSep))
             m.viewport.SetContent(strings.Join(m.history, "\n"))
             m.viewport.GotoBottom()
             m.loading = true
             m.tokenCount = 0
+            m.loadingFrame = 0
+            m.isStreamingAI = false
             m.streamStart = time.Now()
             return m, m.callOllama(prompt)
         }
@@ -130,19 +158,37 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         if chunk.Done {
             m.loading = false
             m.currentAI = ""
+            m.isStreamingAI = false
+            if !m.streamStart.IsZero() {
+                m.lastDuration = time.Since(m.streamStart)
+            }
             m.streamStart = time.Time{}
             return m, nil
         }
         m.loading = true
+        m.loadingFrame++
         m.currentAI += chunk.Content
-        rendered := renderMD(m.currentAI, m.viewport.Width-4)
-        aiPrefix := "🤖 AI:"
-        if len(m.history) > 0 && strings.Contains(m.history[len(m.history)-1], aiPrefix) {
-            m.history[len(m.history)-1] = aiStyle.Render(aiPrefix + " " + rendered)
-        } else {
-            m.history = append(m.history, aiStyle.Render(aiPrefix+" "+rendered))
+        
+        // Responsive AI message - max 85% of viewport width
+        maxWidth := int(float64(m.viewport.Width) * 0.85)
+        if maxWidth < 20 {
+            maxWidth = 20
         }
-        m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.history, "\n")))
+        
+        rendered := renderMD(m.currentAI, maxWidth-8) // Account for padding and prefix
+        aiPrefix := "🤖 AI:"
+        aiMessage := aiStyle.Width(maxWidth).Render(aiPrefix + " " + rendered)
+        
+        // Use flag to track if we're streaming AI response
+        if m.isStreamingAI {
+            // Update existing AI message
+            m.history[len(m.history)-1] = aiMessage
+        } else {
+            // Start new AI message
+            m.history = append(m.history, aiMessage)
+            m.isStreamingAI = true
+        }
+        m.viewport.SetContent(strings.Join(m.history, "\n"))
         m.viewport.GotoBottom()
         m.tokenCount += len(strings.Fields(chunk.Content))
         return m, streamNext(msg.Stream)
@@ -194,41 +240,72 @@ func (m ChatModel) View() string {
         return m.modelList.View()
     }
     
-    // Enhanced header with better styling
-    header := headerStyle.Render(fmt.Sprintf("🚀 Chat LLM • %s", m.modelName))
-    
-    // Main chat body
+    // Body
     body := m.viewport.View()
-    
-    // Loading indicator with better styling
-    if m.loading {
-        loadingMsg := loadingStyle.Render("⏳ Generando respuesta...")
-        body += "\n" + loadingMsg
-    }
-    
-    // Enhanced status bar with better token info
+
+    // Stats
     tps := 0.0
     if !m.streamStart.IsZero() {
-        elapsed := time.Since(m.streamStart).Seconds()
-        if elapsed > 0 {
-            tps = float64(m.tokenCount) / elapsed
+        if sec := time.Since(m.streamStart).Seconds(); sec > 0 {
+            tps = float64(m.tokenCount) / sec
         }
     }
+    // Enhanced status bar with color coding
+    var statusText string
+    statusIcon := "📊"
+    if m.loading {
+        statusIcon = "⚡"
+    }
     
-    // Status with better formatting and shortcuts
-    statusContent := fmt.Sprintf("📊 %s • %s tokens • %s t/s", 
-        infoStyle.Render(m.modelName),
-        infoStyle.Render(fmt.Sprintf("%d", m.tokenCount)),
-        infoStyle.Render(fmt.Sprintf("%.1f", tps)))
+    modelPart := infoStyle.Render(m.modelName)
+    tokenPart := fmt.Sprintf("tokens: %s", infoStyle.Render(fmt.Sprintf("%d", m.tokenCount)))
+    speedPart := fmt.Sprintf("%.1f t/s", tps)
     
-    shortcuts := helpStyle.Render("Ctrl+M modelo • Ctrl+L limpiar • Ctrl+C salir • ↑↓ scroll")
+    if tps > 50 {
+        speedPart = successStyle.Render(speedPart)
+    } else if tps > 20 {
+        speedPart = infoStyle.Render(speedPart)
+    } else {
+        speedPart = helpStyle.Render(speedPart)
+    }
     
-    status := statusStyle.Width(m.width).Render(statusContent + " • " + shortcuts)
-    
-    // Input with better styling
+    // Always show full stats in footer
+    dur := m.lastDuration
+    if m.loading && !m.streamStart.IsZero() {
+        dur = time.Since(m.streamStart)
+    }
+    durPart := helpStyle.Render(dur.Truncate(time.Millisecond).String())
+    statusText = fmt.Sprintf("%s %s • %s • %s • tiempo: %s", statusIcon, modelPart, tokenPart, speedPart, durPart)
+    status := statusBarStyle.Width(m.width).Render(statusText)
+
+    // Help panel
+    helpPanel := ""
+    if m.showHelp {
+        helpContent := []string{
+            "📋 Atajos de teclado:",
+            "",
+            shortcutStyle.Render("Enter") + "     → Enviar mensaje",
+            shortcutStyle.Render("Ctrl+M") + "    → Cambiar modelo",
+            shortcutStyle.Render("Ctrl+L") + "    → Limpiar chat",
+            shortcutStyle.Render("Ctrl+H/F1") + " → Toggle ayuda",
+            shortcutStyle.Render("↑/↓") + "      → Scroll mensajes",
+            shortcutStyle.Render("Ctrl+C") + "   → Salir",
+            "",
+            helpStyle.Render("Presiona Ctrl+H para ocultar"),
+        }
+        helpText := strings.Join(helpContent, "\n")
+        // Make help panel responsive
+        maxHelpWidth := m.width - 4
+        if maxHelpWidth < 40 {
+            maxHelpWidth = 40
+        }
+        helpPanel = "\n" + errorStyle.Width(maxHelpWidth).Render(helpText)
+    }
+
+    // Footer
     footer := "\n" + m.input.View()
-    
-    return header + "\n" + body + "\n" + status + footer
+
+    return body + helpPanel + "\n" + status + footer
 }
 
 type listItem string

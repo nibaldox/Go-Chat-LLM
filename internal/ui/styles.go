@@ -29,36 +29,44 @@ var (
 
 // Enhanced styles with better hierarchy and spacing
 var (
-    // Header styles
+    // Header styles - Enhanced with gradient-like effect
     headerStyle = lipgloss.NewStyle().
         Bold(true).
         Foreground(textPrimary).
-        Background(primaryColor).
+        Background(lipgloss.Color("#4f46e5")).
+        Padding(1, 3).
+        MarginBottom(1).
+        Border(lipgloss.RoundedBorder()).
+        BorderForeground(primaryColor)
+    
+    // Enhanced status style with better visual hierarchy
+    statusBarStyle = lipgloss.NewStyle().
+        Foreground(textSecondary).
         Padding(0, 2).
-        MarginBottom(1)
+        Border(lipgloss.NormalBorder(), false, false, true, false).
+        BorderForeground(borderColor)
     
     titleStyle = lipgloss.NewStyle().
         Bold(true).
         Foreground(primaryColor).
         MarginBottom(1)
     
-    // Message styles with better visual separation
+    // Message styles with enhanced visual separation
     userStyle = lipgloss.NewStyle().
-        Foreground(userText).
-        Background(userBg).
+        Foreground(userBg).
         Padding(1, 2).
         MarginTop(1).
-        MarginBottom(1).
-        Bold(true)
+        MarginBottom(2).
+        Bold(true).
+        Border(lipgloss.RoundedBorder()).
+        BorderForeground(userBg)
     
     aiStyle = lipgloss.NewStyle().
-        Foreground(aiText).
-        Background(aiBg).
+        Foreground(aiAccent).
         Padding(1, 2).
         MarginTop(1).
-        MarginBottom(1).
-        BorderLeft(true).
-        BorderStyle(lipgloss.RoundedBorder()).
+        MarginBottom(2).
+        Border(lipgloss.RoundedBorder()).
         BorderForeground(aiAccent)
     
     // Status and info styles
@@ -87,15 +95,23 @@ var (
         MarginLeft(1).
         MarginRight(1)
     
-    // Utility styles
+    // Enhanced utility styles
     separatorStyle = lipgloss.NewStyle().
         Foreground(borderColor).
         MarginTop(1).
         MarginBottom(1)
     
+    messageSeparatorStyle = lipgloss.NewStyle().
+        Foreground(lipgloss.Color("#374151")).
+        MarginTop(1).
+        MarginBottom(1)
+    
     loadingStyle = lipgloss.NewStyle().
-        Foreground(accentColor).
-        Bold(true)
+        Foreground(lipgloss.Color("214")).
+        Bold(true).
+        Padding(1, 2).
+        Border(lipgloss.RoundedBorder()).
+        BorderForeground(errorColor)
     
     errorStyle = lipgloss.NewStyle().
         Foreground(errorColor).
