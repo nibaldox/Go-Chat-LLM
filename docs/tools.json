@@ -1,0 +1,24 @@
+[
+  {
+    "name": "web_search",
+    "description": "Search the web for a query and return top results URLs",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "search terms"}
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "calculator",
+    "description": "Evaluate a math expression and return the result",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "expression": {"type": "string"}
+      },
+      "required": ["expression"]
+    }
+  }
+]
