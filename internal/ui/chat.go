@@ -113,9 +113,10 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         case "enter":
             prompt := m.input.Value()
             m.input.Reset()
-            userMsg := userStyle.Render("You:")+" "+prompt
+            userMsg := userStyle.Render("💬 You: "+prompt)
             aligned := lipgloss.NewStyle().Width(m.viewport.Width).Align(lipgloss.Right).Render(userMsg)
             m.history = append(m.history, aligned)
+            m.history = append(m.history, separatorStyle.Render(""))
             m.viewport.SetContent(strings.Join(m.history, "\n"))
             m.viewport.GotoBottom()
             m.loading = true
@@ -134,11 +135,12 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
         }
         m.loading = true
         m.currentAI += chunk.Content
-        rendered := renderMD(m.currentAI, m.viewport.Width)
-        if len(m.history) > 0 && strings.HasPrefix(m.history[len(m.history)-1], aiStyle.Render("AI:")) {
-            m.history[len(m.history)-1] = aiStyle.Render("AI:") + " " + rendered
+        rendered := renderMD(m.currentAI, m.viewport.Width-4)
+        aiPrefix := "🤖 AI:"
+        if len(m.history) > 0 && strings.Contains(m.history[len(m.history)-1], aiPrefix) {
+            m.history[len(m.history)-1] = aiStyle.Render(aiPrefix + " " + rendered)
         } else {
-            m.history = append(m.history, aiStyle.Render("AI:")+" "+rendered)
+            m.history = append(m.history, aiStyle.Render(aiPrefix+" "+rendered))
         }
         m.viewport.SetContent(lipgloss.NewStyle().Width(m.viewport.Width).Render(strings.Join(m.history, "\n")))
         m.viewport.GotoBottom()
@@ -191,11 +193,20 @@ func (m ChatModel) View() string {
     if m.selecting {
         return m.modelList.View()
     }
-    header := headerStyle.Render(" Chat LLM (" + m.modelName + ") ")
+    
+    // Enhanced header with better styling
+    header := headerStyle.Render(fmt.Sprintf("🚀 Chat LLM • %s", m.modelName))
+    
+    // Main chat body
     body := m.viewport.View()
+    
+    // Loading indicator with better styling
     if m.loading {
-        body += "\n" + m.spinner.View()
+        loadingMsg := loadingStyle.Render("⏳ Generando respuesta...")
+        body += "\n" + loadingMsg
     }
+    
+    // Enhanced status bar with better token info
     tps := 0.0
     if !m.streamStart.IsZero() {
         elapsed := time.Since(m.streamStart).Seconds()
@@ -203,8 +214,20 @@ func (m ChatModel) View() string {
             tps = float64(m.tokenCount) / elapsed
         }
     }
-    status := statusStyle.Width(m.width).Render(fmt.Sprintf("%s | tokens: %d (%.1f t/s) | ↑↓ PgUp/PgDn scroll | Ctrl+L limpiar", m.modelName, m.tokenCount, tps))
+    
+    // Status with better formatting and shortcuts
+    statusContent := fmt.Sprintf("📊 %s • %s tokens • %s t/s", 
+        infoStyle.Render(m.modelName),
+        infoStyle.Render(fmt.Sprintf("%d", m.tokenCount)),
+        infoStyle.Render(fmt.Sprintf("%.1f", tps)))
+    
+    shortcuts := helpStyle.Render("Ctrl+M modelo • Ctrl+L limpiar • Ctrl+C salir • ↑↓ scroll")
+    
+    status := statusStyle.Width(m.width).Render(statusContent + " • " + shortcuts)
+    
+    // Input with better styling
     footer := "\n" + m.input.View()
+    
     return header + "\n" + body + "\n" + status + footer
 }
 
